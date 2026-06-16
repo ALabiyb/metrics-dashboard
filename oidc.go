@@ -1,0 +1,195 @@
+package main
+
+// ---------------------------------------------------------------------------
+// Author: Labiyb M. Said — DevSecOps Engineer
+// Contact: abdulmunimsaid82@gmail.com
+// ---------------------------------------------------------------------------
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+
+	"github.com/coreos/go-oidc/v3/oidc"
+	"golang.org/x/oauth2"
+)
+
+// OIDCAuthenticator implements "Continue with Keycloak SSO": the standard
+// OAuth2 Authorization Code flow with OpenID Connect on top, against
+// whichever realm/client is configured via the OIDC_* environment variables.
+//
+// It's optional — see NewOIDCAuthenticator. When it isn't configured, the
+// dashboard works exactly as before with only DASHBOARD_USERS-based local
+// logins, and the login page hides the SSO button entirely.
+type OIDCAuthenticator struct {
+	provider  *oidc.Provider
+	verifier  *oidc.IDTokenVerifier
+	oauth2Cfg oauth2.Config
+	adminRole string
+	auth      *Authenticator // for issuing session cookies + signing state cookies
+}
+
+// oidcClaims is the subset of ID token claims this app cares about. Keycloak
+// (and most OIDC providers) put the username in preferred_username and realm
+// roles under realm_access.roles.
+type oidcClaims struct {
+	Subject           string `json:"sub"`
+	PreferredUsername string `json:"preferred_username"`
+	Email             string `json:"email"`
+	RealmAccess       struct {
+		Roles []string `json:"roles"`
+	} `json:"realm_access"`
+}
+
+// NewOIDCAuthenticator builds an OIDCAuthenticator from the OIDC_* env vars:
+//
+//	OIDC_ISSUER_URL    - e.g. https://keycloak.example.com/realms/myrealm
+//	OIDC_CLIENT_ID     - a confidential client configured in that realm
+//	OIDC_CLIENT_SECRET - the client's secret
+//	OIDC_REDIRECT_URL  - must exactly match the client's "Valid Redirect URI",
+//	                     e.g. http://localhost:8090/login/oidc/callback
+//	OIDC_ADMIN_ROLE    - realm role mapped to the dashboard's "admin" role
+//	                     (default "dashboard-admin"); everyone else who signs
+//	                     in via SSO gets "viewer"
+//
+// If any of the first four are unset, OIDC is disabled: NewOIDCAuthenticator
+// returns (nil, nil) and the login page simply won't show the SSO button.
+func NewOIDCAuthenticator(ctx context.Context, auth *Authenticator) (*OIDCAuthenticator, error) {
+	issuer := os.Getenv("OIDC_ISSUER_URL")
+	clientID := os.Getenv("OIDC_CLIENT_ID")
+	clientSecret := os.Getenv("OIDC_CLIENT_SECRET")
+	redirectURL := os.Getenv("OIDC_REDIRECT_URL")
+	if issuer == "" || clientID == "" || clientSecret == "" || redirectURL == "" {
+		return nil, nil
+	}
+
+	provider, err := oidc.NewProvider(ctx, issuer)
+	if err != nil {
+		return nil, fmt.Errorf("oidc: discovering issuer %s: %w", issuer, err)
+	}
+
+	adminRole := os.Getenv("OIDC_ADMIN_ROLE")
+	if adminRole == "" {
+		adminRole = "dashboard-admin"
+	}
+
+	return &OIDCAuthenticator{
+		provider: provider,
+		verifier: provider.Verifier(&oidc.Config{ClientID: clientID}),
+		oauth2Cfg: oauth2.Config{
+			ClientID:     clientID,
+			ClientSecret: clientSecret,
+			RedirectURL:  redirectURL,
+			Endpoint:     provider.Endpoint(),
+			Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+		},
+		adminRole: adminRole,
+		auth:      auth,
+	}, nil
+}
+
+// handleOIDCLogin starts the Authorization Code flow: it generates a random
+// state (CSRF guard) and nonce (ID-token replay guard), stashes both in a
+// short-lived signed cookie, and redirects the browser to Keycloak's login
+// page.
+func (o *OIDCAuthenticator) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
+	state, err := randomToken()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	nonce, err := randomToken()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	o.auth.setOIDCStateCookie(w, state, nonce)
+	http.Redirect(w, r, o.oauth2Cfg.AuthCodeURL(state, oidc.Nonce(nonce)), http.StatusFound)
+}
+
+// handleOIDCCallback completes the Authorization Code flow: it validates the
+// state cookie, exchanges the authorization code for tokens, verifies the ID
+// token (issuer, audience, nonce), maps the user's Keycloak realm roles to a
+// dashboard role, and issues a normal session cookie — same as a
+// local-credentials login (see Authenticator.issueCookie).
+func (o *OIDCAuthenticator) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
+	state, nonce, err := o.auth.oidcStateFromRequest(r)
+	o.auth.clearOIDCStateCookie(w)
+	if err != nil || r.URL.Query().Get("state") != state {
+		log.Printf("oidc callback: invalid or missing state: %v", err)
+		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		return
+	}
+
+	if errParam := r.URL.Query().Get("error"); errParam != "" {
+		log.Printf("oidc callback: provider returned error: %s", errParam)
+		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		return
+	}
+
+	token, err := o.oauth2Cfg.Exchange(r.Context(), r.URL.Query().Get("code"))
+	if err != nil {
+		log.Printf("oidc callback: code exchange failed: %v", err)
+		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		return
+	}
+
+	rawIDToken, ok := token.Extra("id_token").(string)
+	if !ok {
+		log.Printf("oidc callback: token response had no id_token")
+		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		return
+	}
+
+	idToken, err := o.verifier.Verify(r.Context(), rawIDToken)
+	if err != nil {
+		log.Printf("oidc callback: id_token verification failed: %v", err)
+		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		return
+	}
+	if idToken.Nonce != nonce {
+		log.Printf("oidc callback: nonce mismatch")
+		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		return
+	}
+
+	var claims oidcClaims
+	if err := idToken.Claims(&claims); err != nil {
+		log.Printf("oidc callback: decoding claims failed: %v", err)
+		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		return
+	}
+
+	username := claims.PreferredUsername
+	if username == "" {
+		username = claims.Email
+	}
+	if username == "" {
+		username = claims.Subject
+	}
+
+	role := roleViewer
+	for _, rr := range claims.RealmAccess.Roles {
+		if rr == o.adminRole {
+			role = roleAdmin
+			break
+		}
+	}
+
+	o.auth.issueCookie(w, username, role)
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+// randomToken returns a URL-safe random string suitable for OAuth2 state and
+// nonce values.
+func randomToken() (string, error) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
