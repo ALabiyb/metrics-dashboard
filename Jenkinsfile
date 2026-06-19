@@ -23,7 +23,7 @@ pipeline {
         // Project identity
         PROJECT_NAME            = 'Metrics Dashboard'
         IMAGE_NAME              = 'metrics-dashboard'
-        HARBOR_PROJECT          = 'CHANGE_ME_harbor_project'   // e.g. k8s_dashboard
+        HARBOR_PROJECT          = 'k8s_dashboard'
         REGISTRY_URL            = 'harbor.devops.softnethq.co.tz'
         REGISTRY_CREDENTIALS_ID = 'robot-jenkins'
 
@@ -31,7 +31,7 @@ pipeline {
         NOTIFICATION_EMAIL = 'lsaid@softnet.co.tz'
 
         // Source repo
-        GIT_REPO_URL       = 'http://192.168.15.85/CHANGE_ME_group/metrics-dashboard.git'
+        GIT_REPO_URL       = 'http://192.168.15.85/devsecops1/metrics-dashboard.git'
         GIT_CREDENTIALS_ID = 'lsaid'
         // BRANCH_NAME is set automatically by Jenkins Multibranch — do not override
 
@@ -51,7 +51,7 @@ pipeline {
 
         // DefectDojo
         DEFECTDOJO_URL           = 'https://defectdojo.devops.softnethq.co.tz'
-        DEFECTDOJO_ENGAGEMENT_ID = 'CHANGE_ME_engagement_id'
+        DEFECTDOJO_ENGAGEMENT_ID = '24'
 
         // Dependency-Track — SBOM upload
         DEPENDENCY_TRACK_URL = 'https://dependencytrack.devops.softnethq.co.tz'
