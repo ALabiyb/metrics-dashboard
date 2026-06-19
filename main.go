@@ -98,6 +98,7 @@ func main() {
 	// -- public routes --------------------------------------------------
 	mux.HandleFunc("/login", auth.handleLogin)
 	mux.HandleFunc("/logout", auth.handleLogout)
+	mux.HandleFunc("/embed", auth.handleEmbed(os.Getenv("EMBED_TOKEN")))
 	if oidcAuth != nil {
 		mux.HandleFunc("/login/oidc", oidcAuth.handleOIDCLogin)
 		mux.HandleFunc("/login/oidc/callback", oidcAuth.handleOIDCCallback)

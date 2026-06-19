@@ -267,7 +267,7 @@ function Dashboard() {
 
       {/* footer */}
       <div style={{ flex: '0 0 auto', textAlign: 'center', font: '500 10px/1 "IBM Plex Mono",monospace', letterSpacing: '0.04em', color: COL.mut2 }}>
-        SoftNet DevSecOps Platform · © 2026 Labiyb M. Said · DevSecOps Engineer
+        SoftNet DevSecOps Platform · © 2026
       </div>
     </div>
   );

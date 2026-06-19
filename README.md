@@ -201,6 +201,55 @@ Routes added only when OIDC is enabled:
 On any failure, the callback redirects back to `/login?error=1` — check the
 server logs for the underlying reason.
 
+### Creating the Keycloak client (metrics-dashboard)
+
+These steps use the same realm as k8s-dashboard (`k8s dashboard`). Do this once before deploying with SSO enabled.
+
+**1 — Open Keycloak Admin Console**
+```
+https://keycloak.devops.softnethq.co.tz/admin → Realm: k8s dashboard → Clients → Create client
+```
+
+**2 — Client settings**
+
+| Field | Value |
+|---|---|
+| Client type | OpenID Connect |
+| Client ID | `metrics-dashboard` |
+| Name | Metrics Dashboard |
+| Client authentication | **On** (makes it confidential) |
+| Authorization | Off |
+| Authentication flow | Standard flow only |
+
+**3 — Login settings (next screen)**
+
+| Field | Value |
+|---|---|
+| Valid redirect URIs | `https://metrics-dashboard.dev.softnethq.co.tz/login/oidc/callback` |
+| Valid post logout redirect URIs | `https://metrics-dashboard.dev.softnethq.co.tz/` |
+| Web origins | `https://metrics-dashboard.dev.softnethq.co.tz` |
+
+Click **Save**.
+
+**4 — Copy the client secret**
+
+Go to **Credentials** tab → copy the value under **Client secret**.
+
+**5 — Patch it into the Kubernetes Secret**
+
+```bash
+kubectl -n k8s-dashboard patch secret dashboard-auth \
+  --type=merge \
+  -p '{"stringData":{"OIDC_CLIENT_SECRET":"<paste-secret-here>"}}'
+kubectl -n k8s-dashboard rollout restart deployment/metrics-dashboard
+```
+
+**6 — Assign realm roles to users**
+
+Users need the realm role `dashboard-admin` (full access) or any other role (viewer access).
+Go to **Users → <user> → Role mapping → Assign role** and pick `dashboard-admin`.
+These are the same roles already used by k8s-dashboard — no new roles needed.
+
 ## Connecting it to a real cluster
 
 Right now `main.go` wires up `*Simulator` as the `dataSource`:
@@ -441,3 +490,85 @@ kubectl port-forward -n dashboard svc/dashboard 8090:80
 Test credentials (bcrypt-hashed in the Secret — change before any real use):
 - admin: admin / TestAdmin#2026
 - viewer: viewer / TestViewer#2026/exit
+
+## TV Wall Display — Embed Token
+
+The `/embed` endpoint lets a kiosk (e.g. a Samsung TV) load the dashboard in
+an iframe without a username/password. A static secret token is validated
+server-side; the browser receives a read-only `viewer` session cookie. Normal
+logins (password and Keycloak SSO) are completely unchanged.
+
+### How it works
+
+```
+iframe → GET /embed?token=<EMBED_TOKEN>
+            ↓  token validated (constant-time compare)
+            ↓  Set-Cookie: dashboard_session  (role=viewer, 12 h)
+            ↓  302 → /
+iframe → GET /  (cookie sent — same LAN IP, SameSite=Lax allows different port)
+            ↓  dashboard loads in read-only viewer mode
+```
+
+The token lives in the `dashboard-auth` Kubernetes Secret as `EMBED_TOKEN`.
+**Never commit it to git.**
+
+### Step 1 — Generate a token (on the server)
+
+```bash
+openssl rand -hex 32
+```
+
+### Step 2 — Patch it into the Secret
+
+```bash
+kubectl -n k8s-dashboard patch secret dashboard-auth \
+  --type=merge \
+  -p "{\"stringData\":{\"EMBED_TOKEN\":\"$(openssl rand -hex 32)\"}}"
+```
+
+### Step 3 — Read the token back (to paste into tv.html)
+
+```bash
+kubectl -n k8s-dashboard get secret dashboard-auth \
+  -o jsonpath='{.data.EMBED_TOKEN}' | base64 -d && echo
+```
+
+### Step 4 — Restart the deployment
+
+```bash
+kubectl -n k8s-dashboard rollout restart deployment/metrics-dashboard
+```
+
+### Step 5 — Set the iframe URL in tv.html
+
+Use the **HTTP NodePort** to avoid the self-signed TLS certificate error on the
+Samsung TV browser:
+
+```html
+<iframe src="http://192.168.200.15:32029/embed?token=<your-token>"></iframe>
+```
+
+### Cookie behaviour by protocol
+
+| Access path | SameSite | Secure | When to use |
+|---|---|---|---|
+| HTTP NodePort `:32029` | `Lax` | No | Samsung TV kiosk (same LAN IP) |
+| HTTPS Istio Gateway | `None` | Yes | Cross-domain iframe over TLS |
+
+The `/embed` handler detects the protocol via `X-Forwarded-Proto` and sets the
+cookie attributes automatically — no code change needed when switching between
+the two paths.
+
+### Rotating the token
+
+If you suspect the token was leaked:
+
+```bash
+kubectl -n k8s-dashboard patch secret dashboard-auth \
+  --type=merge \
+  -p "{\"stringData\":{\"EMBED_TOKEN\":\"$(openssl rand -hex 32)\"}}"
+kubectl -n k8s-dashboard rollout restart deployment/metrics-dashboard
+```
+
+Update `tv.html` with the new token and push — the old token stops working
+as soon as the pod restarts.

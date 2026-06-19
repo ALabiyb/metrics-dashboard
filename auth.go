@@ -358,6 +358,44 @@ func (a *Authenticator) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
+// handleEmbed validates a static embed token and issues a viewer session so
+// cross-origin iframes (e.g. a TV wall display) stay authenticated without
+// exposing user credentials.
+//
+// HTTP (TV NodePort): SameSite=Lax, no Secure — works because the TV page and
+// this service share the same host IP (same-site, different port).
+// HTTPS (gateway): SameSite=None + Secure — required for cross-domain iframes.
+func (a *Authenticator) handleEmbed(embedToken string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if embedToken == "" {
+			http.NotFound(w, r)
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("token")), []byte(embedToken)) != 1 {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		https := r.Header.Get("X-Forwarded-Proto") == "https" || r.TLS != nil
+		sameSite := http.SameSiteLaxMode
+		if https {
+			sameSite = http.SameSiteNoneMode
+		}
+		s := session{Username: "kiosk", Role: roleViewer, Expires: time.Now().Add(sessionTTL)}
+		payload, _ := json.Marshal(s)
+		encoded := base64.RawURLEncoding.EncodeToString(payload)
+		http.SetCookie(w, &http.Cookie{
+			Name:     sessionCookieName,
+			Value:    encoded + "." + a.sign([]byte(encoded)),
+			Path:     "/",
+			Expires:  s.Expires,
+			HttpOnly: true,
+			Secure:   https,
+			SameSite: sameSite,
+		})
+		http.Redirect(w, r, "/", http.StatusFound)
+	}
+}
+
 // handleMe reports who the caller is authenticated as, so the frontend (which
 // can't read the HttpOnly session cookie) knows what to render — e.g. whether
 // to show admin-only panels. Must sit behind requireAuth.

@@ -1,0 +1,126 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metrics-dashboard
+  namespace: k8s-dashboard
+  labels:
+    app: dashboard
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dashboard
+  template:
+    metadata:
+      labels:
+        app: dashboard
+    spec:
+      # Sessions are stateless HMAC-signed cookies (see auth.go), so any
+      # replica can validate a session issued by any other — as long as they
+      # all share SESSION_SECRET from the dashboard-auth Secret. No sticky
+      # sessions or shared session store needed.
+      securityContext:
+        runAsNonRoot: true
+        # distroless `nonroot` images use a non-numeric USER, which some
+        # container runtimes can't resolve to verify runAsNonRoot — pin the
+        # UID/GID explicitly (65532 is `nonroot` in distroless).
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dashboard
+          image: munimdevops/devops:metrics-tv-test
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8090
+          env:
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: metrics-dashboard-config
+                  key: PORT
+            - name: DASHBOARD_USERS
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-auth
+                  key: DASHBOARD_USERS
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-auth
+                  key: SESSION_SECRET
+            - name: EMBED_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-auth
+                  key: EMBED_TOKEN
+            # See k8s/config.yaml (metrics-dashboard-config ConfigMap) to
+            # point this at your Prometheus Service.
+            - name: PROMETHEUS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: metrics-dashboard-config
+                  key: PROMETHEUS_URL
+            # Optional: enable "Continue with Keycloak SSO" on /login. All
+            # four of OIDC_ISSUER_URL/OIDC_CLIENT_ID/OIDC_CLIENT_SECRET/
+            # OIDC_REDIRECT_URL must be set for SSO to be enabled — see
+            # README.md § Authentication and run-guide.md § 6. Non-secret
+            # values come from k8s/config.yaml (metrics-dashboard-config
+            # ConfigMap); OIDC_CLIENT_SECRET comes from the dashboard-auth
+            # Secret.
+            - name: OIDC_ISSUER_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: metrics-dashboard-config
+                  key: OIDC_ISSUER_URL
+            - name: OIDC_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: metrics-dashboard-config
+                  key: OIDC_CLIENT_ID
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dashboard-auth
+                  key: OIDC_CLIENT_SECRET
+            - name: OIDC_REDIRECT_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: metrics-dashboard-config
+                  key: OIDC_REDIRECT_URL
+            - name: OIDC_ADMIN_ROLE
+              valueFrom:
+                configMapKeyRef:
+                  name: metrics-dashboard-config
+                  key: OIDC_ADMIN_ROLE
+            - name: OIDC_TLS_SKIP_VERIFY
+              valueFrom:
+                configMapKeyRef:
+                  name: metrics-dashboard-config
+                  key: OIDC_TLS_SKIP_VERIFY
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /login
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /login
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi

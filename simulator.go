@@ -8,6 +8,7 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"os"
 	"sync"
 	"time"
 )
@@ -300,8 +301,12 @@ func (s *Simulator) Snapshot() Snapshot {
 		activeCount = 1
 	}
 
+	clusterName := os.Getenv("CLUSTER_NAME")
+	if clusterName == "" {
+		clusterName = "dev-cluster"
+	}
 	cluster := Cluster{
-		Name: "prod-cluster-01", Region: "eu-central · rack A/B", Version: "v1.30.2",
+		Name: clusterName, Region: "eu-central · rack A/B", Version: "v1.30.2",
 		Nodes: len(nodes), Ready: ready,
 		CPU: activeCPU / float64(activeCount), Mem: activeMem / float64(activeCount),
 		PodsUsed: podsUsed, PodsCap: podsCap,

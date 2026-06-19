@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -494,8 +495,12 @@ func (r *RealSource) refresh() {
 		activeCount = 1
 	}
 
+	clusterName := os.Getenv("CLUSTER_NAME")
+	if clusterName == "" {
+		clusterName = "dev-cluster"
+	}
 	cluster := Cluster{
-		Name: "prod-cluster-01", Region: "connected · live", Version: "live",
+		Name: clusterName, Region: "connected · live", Version: "live",
 		Nodes: len(nodes), Ready: ready,
 		CPU: activeCPU / float64(activeCount), Mem: activeMem / float64(activeCount),
 		PodsUsed: podsUsed, PodsCap: podsCap,

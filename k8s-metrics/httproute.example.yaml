@@ -1,0 +1,32 @@
+# EXAMPLE — adjust hostnames/parentRefs to match your Gateway API setup, then
+# rename to httproute.yaml. Use this instead of a classic Ingress on clusters
+# fronted by a Gateway API implementation (e.g. Istio's gateway controller),
+# such as the `main-gateway` Gateway in the istio-system namespace.
+#
+# TLS termination happens at the Gateway's HTTPS listener referenced below —
+# that's what makes it safe to flip the session cookie's Secure flag on in
+# auth.go's issueCookie — see README.md § Authentication for that note.
+#
+# Requires the Gateway's HTTPS listener to allow routes from other
+# namespaces (allowedRoutes.namespaces.from: All, or a Selector matching the
+# `dashboard` namespace) — same as any other HTTPRoute attached to it.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: dashboard
+  namespace: k8s-dashboard
+spec:
+  parentRefs:
+    - name: main-gateway
+      namespace: istio-system
+      sectionName: https   # attaches only to the Gateway's HTTPS listener
+  hostnames:
+    - "metrics-dashboard.dev.softnethq.co.tz"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: dashboard
+          port: 80

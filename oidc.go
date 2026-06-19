@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"log"
@@ -26,11 +27,12 @@ import (
 // dashboard works exactly as before with only DASHBOARD_USERS-based local
 // logins, and the login page hides the SSO button entirely.
 type OIDCAuthenticator struct {
-	provider  *oidc.Provider
-	verifier  *oidc.IDTokenVerifier
-	oauth2Cfg oauth2.Config
-	adminRole string
-	auth      *Authenticator // for issuing session cookies + signing state cookies
+	provider   *oidc.Provider
+	verifier   *oidc.IDTokenVerifier
+	oauth2Cfg  oauth2.Config
+	adminRole  string
+	auth       *Authenticator // for issuing session cookies + signing state cookies
+	httpClient *http.Client   // custom client for token exchange (same TLS config as discovery)
 }
 
 // oidcClaims is the subset of ID token claims this app cares about. Keycloak
@@ -67,6 +69,17 @@ func NewOIDCAuthenticator(ctx context.Context, auth *Authenticator) (*OIDCAuthen
 		return nil, nil
 	}
 
+	// Allow skipping TLS verification for internal Keycloak instances that use
+	// a self-signed or internal CA (set OIDC_TLS_SKIP_VERIFY=true).
+	httpClient := &http.Client{}
+	if os.Getenv("OIDC_TLS_SKIP_VERIFY") == "true" {
+		log.Println("oidc: TLS verification disabled — only use with trusted internal CAs")
+		httpClient.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+		}
+	}
+	ctx = oidc.ClientContext(ctx, httpClient)
+
 	provider, err := oidc.NewProvider(ctx, issuer)
 	if err != nil {
 		return nil, fmt.Errorf("oidc: discovering issuer %s: %w", issuer, err)
@@ -78,8 +91,9 @@ func NewOIDCAuthenticator(ctx context.Context, auth *Authenticator) (*OIDCAuthen
 	}
 
 	return &OIDCAuthenticator{
-		provider: provider,
-		verifier: provider.Verifier(&oidc.Config{ClientID: clientID}),
+		provider:   provider,
+		verifier:   provider.Verifier(&oidc.Config{ClientID: clientID}),
+		httpClient: httpClient,
 		oauth2Cfg: oauth2.Config{
 			ClientID:     clientID,
 			ClientSecret: clientSecret,
@@ -131,7 +145,7 @@ func (o *OIDCAuthenticator) handleOIDCCallback(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	token, err := o.oauth2Cfg.Exchange(r.Context(), r.URL.Query().Get("code"))
+	token, err := o.oauth2Cfg.Exchange(oidc.ClientContext(r.Context(), o.httpClient), r.URL.Query().Get("code"))
 	if err != nil {
 		log.Printf("oidc callback: code exchange failed: %v", err)
 		http.Redirect(w, r, "/login?error=1", http.StatusFound)

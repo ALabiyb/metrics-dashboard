@@ -1,0 +1,29 @@
+# Non-secret configuration for the dashboard Deployment. Apply this
+# alongside namespace.yaml, before deployment.yaml — see run-guide.md § 4.
+#
+# Sensitive values (DASHBOARD_USERS, SESSION_SECRET, OIDC_CLIENT_SECRET) live
+# in the dashboard-auth Secret instead — see secret.example.yaml. They must
+# never go in a ConfigMap, which is stored unencrypted and visible to anyone
+# who can read resources in this namespace.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: metrics-dashboard-config
+  namespace: k8s-dashboard
+data:
+  PORT: "8090"
+  # Point to the in-cluster Prometheus Service. Adjust namespace and release
+  # name if your kube-prometheus-stack was installed with a different Helm
+  # release name or into a different namespace. For external Prometheus, use
+  # the NodePort URL instead, e.g. "http://192.168.200.15:30909".
+  PROMETHEUS_URL: "http://monitoring-kube-prometheus-prometheus.monitoring.svc:9090"
+
+  # Shown in the dashboard header — change to "prod-cluster" in prod ConfigMap.
+  CLUSTER_NAME: "dev-cluster"
+
+  # --- Keycloak SSO (same realm as k8s-dashboard) --------------------------
+  OIDC_ISSUER_URL: "https://keycloak.devops.softnethq.co.tz/realms/k8s%20dashboard"
+  OIDC_CLIENT_ID: "metrics-dashboard"
+  OIDC_REDIRECT_URL: "https://metrics-dashboard.dev.softnethq.co.tz/login/oidc/callback"
+  OIDC_ADMIN_ROLE: "dashboard-admin"
+  OIDC_TLS_SKIP_VERIFY: "true"
