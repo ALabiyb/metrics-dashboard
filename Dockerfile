@@ -15,6 +15,6 @@ FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
 COPY --from=build /out/dashboard /app/dashboard
 
-USER nonroot:nonroot
+USER 65532:65532
 EXPOSE 8090
 ENTRYPOINT ["/app/dashboard"]
