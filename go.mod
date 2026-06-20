@@ -1,6 +1,6 @@
 module k8s-ceph-dashboard
 
-go 1.26.3
+go 1.26
 
 require (
 	github.com/coreos/go-oidc/v3 v3.18.0
