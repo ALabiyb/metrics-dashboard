@@ -306,6 +306,7 @@ type loginPageData struct {
 	OIDCEnabled     bool
 	DataSourceLabel string
 	Healthy         bool
+	AppEnv          string // "Development" or "Production" — shown in the eyebrow badge
 }
 
 func (a *Authenticator) handleLoginPage(w http.ResponseWriter, r *http.Request) {
@@ -314,9 +315,14 @@ func (a *Authenticator) handleLoginPage(w http.ResponseWriter, r *http.Request) 
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
+	appEnv := os.Getenv("APP_ENV")
+	if appEnv == "" {
+		appEnv = "Development"
+	}
 	data := loginPageData{
 		Error:       r.URL.Query().Get("error") != "",
 		OIDCEnabled: a.oidc != nil,
+		AppEnv:      appEnv,
 	}
 	if a.dataSource != nil {
 		data.DataSourceLabel = a.dataSource.SourceLabel()
@@ -529,7 +535,7 @@ const loginPageHTML = `<!DOCTYPE html>
     <div class="brand-top">
       <div class="logo-glow">⎈</div>
       <div>
-        <span class="eyebrow">Development Environment</span>
+        <span class="eyebrow">{{.AppEnv}} Environment</span>
         <div class="headline">Kubernetes Cluster Observability</div>
         <div class="tagline">Real-time visibility into node health, workloads, and Ceph storage.</div>
       </div>

@@ -97,6 +97,82 @@ login. There are two roles:
   small violet "ADMIN · UP …" chip in the header — viewers never see it, and
   the backend never even sends them that data.
 
+### Why these secrets matter (plain-language explainer)
+
+Three secrets show up everywhere in this project: **password hashes**,
+**`SESSION_SECRET`**, and **`EMBED_TOKEN`**. Future-me will forget what they're
+for — here's the short version.
+
+#### Password hashes (in `DASHBOARD_USERS`)
+
+Passwords must never be stored as plain text. Instead, we store a **bcrypt
+hash** — a one-way fingerprint of the password. At login, the server hashes
+what the user typed and compares it to the stored hash. If they match, login
+succeeds; if the database leaks, attackers get hashes that take years to
+brute-force one password.
+
+The image itself contains a `hash-password` subcommand because the Go binary
+already has the `bcrypt` library built in — saves installing extra tools on
+the cluster:
+
+```bash
+kubectl run hash --rm -it --restart=Never \
+  --image=harbor.devops.softnethq.co.tz/k8s_dashboard/metrics-dashboard:1.0.0 \
+  --command -- /app/dashboard hash-password 'YourPassword'
+```
+
+Output: `$2a$10$abc...` — paste this into `DASHBOARD_USERS` as the
+`password_hash` for that user.
+
+(You can also use `htpasswd -bnBC 10 "" 'YourPassword'` or
+`python3 -c "import bcrypt; print(bcrypt.hashpw(b'YourPassword', bcrypt.gensalt()).decode())"`
+— all three produce the same kind of bcrypt hash. The image method just has
+zero dependencies.)
+
+#### `SESSION_SECRET` — the cookie signing key
+
+When a user logs in, the server creates a session cookie holding
+`{username, role, expiry}`. Without protection, anyone could edit the cookie
+to say `role: admin` and bypass auth.
+
+To prevent that, the server **HMAC-signs** the cookie payload with
+`SESSION_SECRET` and appends the signature. On every request:
+
+1. Server reads the cookie
+2. Re-computes the HMAC with `SESSION_SECRET`
+3. Compares to the signature in the cookie — mismatch = tampered = rejected
+
+The secret never leaves the server. Without it, attackers can't forge a valid
+signature. This also makes sessions **stateless**: no database needed, any
+replica validates any cookie as long as they share the same secret.
+
+**Why a fresh value per environment:** if dev and prod shared `SESSION_SECRET`,
+a stolen dev cookie would be valid on prod. Always generate fresh per env:
+
+```bash
+openssl rand -base64 32
+```
+
+If you suspect a leak, rotate it. All existing sessions instantly become
+invalid (everyone re-logs in).
+
+#### `EMBED_TOKEN` — the bypass-login key for the TV kiosk
+
+The Samsung TV can't type a password. The `/embed?token=<EMBED_TOKEN>`
+endpoint takes a static secret token, validates it, and silently issues a
+viewer-role session cookie — no login prompt. See
+[§ TV Wall Display — Embed Token](#tv-wall-display--embed-token) below for
+the full story.
+
+#### `OIDC_CLIENT_SECRET` — the Keycloak client password
+
+When a user clicks "Sign in with Keycloak", our app talks to Keycloak using
+the standard OAuth2 flow. Keycloak verifies our app is who it claims to be
+using this client secret. Get it from Keycloak Admin → realm `k8s dashboard`
+→ Clients → `metrics-dashboard` → Credentials tab.
+
+---
+
 How it works (`auth.go`):
 
 - **Users** come from the `DASHBOARD_USERS` env var — a JSON array of
