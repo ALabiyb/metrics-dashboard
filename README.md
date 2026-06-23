@@ -156,7 +156,11 @@ openssl rand -base64 32
 If you suspect a leak, rotate it. All existing sessions instantly become
 invalid (everyone re-logs in).
 
-#### `EMBED_TOKEN` — the bypass-login key for the TV kiosk
+#### `EMBED_TOKEN` — *(deprecated)* the bypass-login key for the TV kiosk
+
+> **Deprecated**, kept for backwards compatibility. The TV wall now uses
+> the `/tv/` kiosk mode (no auth, no cookie, no token). See
+> [§ TV Wall Display — /tv/ kiosk mode](#tv-wall-display--tv-kiosk-mode-recommended) below.
 
 The Samsung TV can't type a password. The `/embed?token=<EMBED_TOKEN>`
 endpoint takes a static secret token, validates it, and silently issues a
@@ -567,7 +571,66 @@ Test credentials (bcrypt-hashed in the Secret — change before any real use):
 - admin: admin / TestAdmin#2026
 - viewer: viewer / TestViewer#2026/exit
 
-## TV Wall Display — Embed Token
+## TV Wall Display — `/tv/` kiosk mode (recommended)
+
+The `/tv/` endpoint serves the dashboard with **no authentication required** —
+no login form, no cookie, no token. The TV iframe just hits
+`http://<host>/tv/` and the React SPA renders with public read-only data.
+
+### How it works
+
+```
+iframe → GET /tv/                       ← serves the SPA (index.html + jsx)
+       → GET /tv/me        → {"role":"viewer","username":"tv"}
+       → GET /tv/snapshot  → live node/Ceph/event data
+```
+
+The SPA bundle is the same one served at `/`. `shared.jsx` checks
+`window.location.pathname.startsWith('/tv')` at load time and switches
+every `fetch('/api/...')` to `fetch('/tv/...')`. The `/tv/*` routes are
+registered without `auth.requireAuth` (see `main.go`).
+
+### Why `/tv/` and not `/embed?token=...`
+
+The original embed-token approach set a `SameSite=Lax` session cookie. Modern
+browsers block third-party cookies in cross-port iframes — so after the
+initial load, subsequent `/api/snapshot` polls lost the cookie, hit
+`302 → /login`, and the JSON parser failed on the HTML response
+(`Unexpected token '<', '<!DOCTYPE'... is not valid JSON`).
+
+`/tv/` avoids the cookie problem entirely. Works identically across Chrome,
+Firefox, Safari, and any TV kiosk browser regardless of third-party-cookie
+settings.
+
+### Security stance
+
+- The TV server (`192.168.200.78`) is on the internal LAN — not internet-exposed.
+- `/tv/*` only returns operational health data — no secrets, no
+  pod-environment-variables, no node names beyond what's already public.
+- No POST endpoints exist under `/tv/` (no admin export, no logout, no
+  state changes possible).
+- The `/api/admin/status` endpoint is **not** exposed under `/tv/` —
+  `useAdminStatus` enables itself only when the role is `admin`, and
+  `/tv/me` returns `viewer`, so admin polling never fires.
+- If exposing externally, gate `/tv/*` by source IP at the Gateway/Ingress.
+
+### Setting up the TV iframe
+
+```html
+<iframe src="http://192.168.200.78:9094/tv/"></iframe>
+```
+
+The trailing slash matters — the route is mounted as a directory so the SPA
+can resolve its relative `shared.jsx`, `dashboard.jsx`, etc. assets.
+
+---
+
+## TV Wall Display — Embed Token (deprecated)
+
+> **Deprecated:** The `/embed?token=…` endpoint still works for backwards
+> compatibility but is no longer used by the SoftNet TV wall. Prefer the
+> `/tv/` kiosk mode above — simpler, no cookie issues in iframes, no token
+> rotation needed.
 
 The `/embed` endpoint lets a kiosk (e.g. a Samsung TV) load the dashboard in
 an iframe without a username/password. A static secret token is validated
