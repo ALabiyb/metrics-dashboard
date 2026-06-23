@@ -8,6 +8,13 @@
 // Author: Labiyb M. Said — DevSecOps Engineer
 // Contact: abdulmunimsaid82@gmail.com
 
+// API_BASE: '/api' when the dashboard is loaded under the normal authenticated
+// path, '/tv' when loaded under /tv/ for the kiosk display (public read-only,
+// no login). The TV path serves the same SPA and the JS detects the URL it was
+// loaded under, so the same bundle works for both modes.
+const API_BASE = window.location.pathname.startsWith('/tv') ? '/tv' : '/api';
+const TV_MODE  = API_BASE === '/tv';
+
 const COL = {
   bg: '#0a0e14',
   panel: '#10151e',
@@ -59,7 +66,9 @@ const fmt = {
 async function fetchJSON(url) {
   const res = await fetch(url, { credentials: 'same-origin' });
   if (res.status === 401) {
-    window.location.href = '/login';
+    // In TV kiosk mode there's no login to bounce to — just throw and the
+    // caller will keep retrying. Normal mode redirects to /login.
+    if (!TV_MODE) window.location.href = '/login';
     throw new Error('unauthenticated');
   }
   if (!res.ok) throw new Error(url + ' → ' + res.status);
@@ -79,7 +88,7 @@ function useLiveSnapshot(pollMs = 2000) {
 
     async function poll() {
       try {
-        const data = await fetchJSON('/api/snapshot');
+        const data = await fetchJSON(API_BASE + '/snapshot');
         if (!alive) return;
         setSnapshot({
           ...data,
@@ -107,7 +116,7 @@ function useMe() {
   const [me, setMe] = React.useState(null);
   React.useEffect(() => {
     let alive = true;
-    fetchJSON('/api/me').then((d) => { if (alive) setMe(d); }).catch((err) => console.error(err));
+    fetchJSON(API_BASE + '/me').then((d) => { if (alive) setMe(d); }).catch((err) => console.error(err));
     return () => { alive = false; };
   }, []);
   return me;

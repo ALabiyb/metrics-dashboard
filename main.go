@@ -114,6 +114,31 @@ func main() {
 	}))
 	mux.Handle("/", auth.requireAuth(http.FileServer(http.FS(staticRoot)).ServeHTTP))
 
+	// -- TV kiosk mode (no auth) -----------------------------------------
+	// Public read-only endpoints for the kiosk display. No login, no cookie,
+	// no third-party-cookie issues in iframes. Safe to expose on a trusted
+	// internal LAN — gate by source IP if exposing externally.
+	// The SPA (index.html + jsx) is served from /tv/* via the same static FS;
+	// the JS detects window.location.pathname.startsWith('/tv') and switches
+	// its fetches from /api/* to /tv/* automatically.
+	mux.HandleFunc("/tv/me", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"username": "tv",
+			"role":     "viewer",
+		})
+	})
+	mux.HandleFunc("/tv/snapshot", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(source.Snapshot()); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	})
+	mux.Handle("/tv/", http.StripPrefix("/tv", http.FileServer(http.FS(staticRoot))))
+	mux.HandleFunc("/tv", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/tv/", http.StatusMovedPermanently)
+	})
+
 	// -- admin-only routes ------------------------------------------------
 	// Authorization in action: any signed-in user can view the dashboard,
 	// but operational/debug info is restricted to the "admin" role. A 401
