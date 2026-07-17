@@ -182,7 +182,7 @@ pipeline {
                 script {
                     generateSbom(
                         projectName:    env.IMAGE_NAME,
-                        projectVersion: env.DEPLOY_IMAGE_TAG
+                        // projectVersion: env.DEPLOY_IMAGE_TAG
                     )
                 }
             }
