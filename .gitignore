@@ -1,1 +1,22 @@
+# Manifest lives in a separate repo (metrics-dashboard-manifest)
 k8s/
+
+# Build artifacts
+*.exe
+*.exe~
+dashboard
+metrics-dashboard
+k8s-ceph-dashboard
+/bin/
+
+# Local state
+server.log
+server.err
+run.log
+*.pid
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store

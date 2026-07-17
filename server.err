@@ -1,3 +1,0 @@
-2026/06/09 12:23:51 real source: connected to Prometheus at http://192.168.200.15:30909
-2026/06/09 12:23:51 data source: real cluster via Prometheus (http://192.168.200.15:30909)
-2026/06/09 12:23:51 K8s + Ceph dashboard listening on http://localhost:8090

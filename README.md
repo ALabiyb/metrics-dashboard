@@ -10,6 +10,20 @@ This implements the **"Mission Control"** layout from the design exploration:
 (CPU/MEM ring gauges, pods, net, disk), and a right rail with the Ceph panel
 plus alerts/events.
 
+<!-- Screenshots — take PNGs into docs/screenshots/ and reference them:
+![Mission Control overview](docs/screenshots/overview.png)
+![Per-node cards](docs/screenshots/nodes.png)
+![Ceph panel](docs/screenshots/ceph.png)
+![Alerts feed](docs/screenshots/alerts.png)
+![OIDC login](docs/screenshots/login-oidc.png)
+-->
+
+## Architecture
+
+![Architecture](docs/screenshots/architecture.png)
+
+Details on the diagram: the app polls Prometheus every 5s for cluster and Ceph metrics, holds them in-memory, and serves a JSON snapshot to the React/JSX frontend. Users authenticate through Keycloak (OIDC, federated to Active Directory via LDAP) — successful login with the `dashboard-admin` realm role becomes an admin session; anyone else authenticated becomes a viewer. Full sequence + auth details in the sections below.
+
 ## Running it
 
 You need Go 1.21+ installed (this was built/tested with Go 1.26).
