@@ -1,4 +1,4 @@
-# K8s + Ceph Cluster Dashboard
+# Metrics Dashboard
 
 A dark, dense, NOC-style live dashboard for a Kubernetes cluster + its Ceph
 storage backend — node CPU/Mem/Disk/Net, pod capacity, Ceph health/OSD/IOPS,
@@ -186,7 +186,7 @@ the full story.
 
 When a user clicks "Sign in with Keycloak", our app talks to Keycloak using
 the standard OAuth2 flow. Keycloak verifies our app is who it claims to be
-using this client secret. Get it from Keycloak Admin → realm `k8s dashboard`
+using this client secret. Get it from Keycloak Admin → realm `SoftNet AD`
 → Clients → `metrics-dashboard` → Credentials tab.
 
 ---

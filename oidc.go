@@ -135,46 +135,46 @@ func (o *OIDCAuthenticator) handleOIDCCallback(w http.ResponseWriter, r *http.Re
 	o.auth.clearOIDCStateCookie(w)
 	if err != nil || r.URL.Query().Get("state") != state {
 		log.Printf("oidc callback: invalid or missing state: %v", err)
-		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		http.Redirect(w, r, loginErrPath, http.StatusFound)
 		return
 	}
 
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
 		log.Printf("oidc callback: provider returned error: %s", errParam)
-		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		http.Redirect(w, r, loginErrPath, http.StatusFound)
 		return
 	}
 
 	token, err := o.oauth2Cfg.Exchange(oidc.ClientContext(r.Context(), o.httpClient), r.URL.Query().Get("code"))
 	if err != nil {
 		log.Printf("oidc callback: code exchange failed: %v", err)
-		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		http.Redirect(w, r, loginErrPath, http.StatusFound)
 		return
 	}
 
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok {
 		log.Printf("oidc callback: token response had no id_token")
-		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		http.Redirect(w, r, loginErrPath, http.StatusFound)
 		return
 	}
 
 	idToken, err := o.verifier.Verify(r.Context(), rawIDToken)
 	if err != nil {
 		log.Printf("oidc callback: id_token verification failed: %v", err)
-		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		http.Redirect(w, r, loginErrPath, http.StatusFound)
 		return
 	}
 	if idToken.Nonce != nonce {
 		log.Printf("oidc callback: nonce mismatch")
-		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		http.Redirect(w, r, loginErrPath, http.StatusFound)
 		return
 	}
 
 	var claims oidcClaims
 	if err := idToken.Claims(&claims); err != nil {
 		log.Printf("oidc callback: decoding claims failed: %v", err)
-		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		http.Redirect(w, r, loginErrPath, http.StatusFound)
 		return
 	}
 

@@ -46,6 +46,11 @@ const (
 	sessionTTL        = 12 * time.Hour
 )
 
+const (
+	loginPath    = "/login"
+	loginErrPath = "/login?error=1"
+)
+
 // dataSourceStatus is implemented by both *Simulator and *RealSource (see
 // simulator.go / real_source.go). It lets the login page report where the
 // dashboard's live data is coming from and whether that source is currently
@@ -143,7 +148,11 @@ func (a *Authenticator) sign(payload []byte) string {
 
 func (a *Authenticator) issueCookie(w http.ResponseWriter, username, role string) {
 	s := session{Username: username, Role: role, Expires: time.Now().Add(sessionTTL)}
-	payload, _ := json.Marshal(s)
+	payload, err := json.Marshal(s)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	encoded := base64.RawURLEncoding.EncodeToString(payload)
 	cookie := encoded + "." + a.sign([]byte(encoded))
 	http.SetCookie(w, &http.Cookie{
@@ -269,7 +278,7 @@ func (a *Authenticator) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			if strings.HasPrefix(r.URL.Path, "/api/") {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 			} else {
-				http.Redirect(w, r, "/login", http.StatusFound)
+				http.Redirect(w, r, loginPath, http.StatusFound)
 			}
 			return
 		}
@@ -341,7 +350,7 @@ func (a *Authenticator) handleLoginSubmit(w http.ResponseWriter, r *http.Request
 	password := r.FormValue("password")
 	role, ok := a.authenticate(username, password)
 	if !ok {
-		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		http.Redirect(w, r, loginErrPath, http.StatusFound)
 		return
 	}
 	a.issueCookie(w, username, role)
@@ -361,7 +370,7 @@ func (a *Authenticator) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 func (a *Authenticator) handleLogout(w http.ResponseWriter, r *http.Request) {
 	a.clearCookie(w)
-	http.Redirect(w, r, "/login", http.StatusFound)
+	http.Redirect(w, r, loginPath, http.StatusFound)
 }
 
 // handleEmbed validates a static embed token and issues a viewer session so
@@ -387,7 +396,11 @@ func (a *Authenticator) handleEmbed(embedToken string) http.HandlerFunc {
 			sameSite = http.SameSiteNoneMode
 		}
 		s := session{Username: "kiosk", Role: roleViewer, Expires: time.Now().Add(sessionTTL)}
-		payload, _ := json.Marshal(s)
+		payload, err := json.Marshal(s)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
 		encoded := base64.RawURLEncoding.EncodeToString(payload)
 		http.SetCookie(w, &http.Cookie{
 			Name:     sessionCookieName,
