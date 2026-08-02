@@ -6,7 +6,7 @@
 // runs the same random-walk simulation server-side (see simulator.go).
 //
 // Author: Labiyb M. Said — DevSecOps Engineer
-// Contact: abdulmunimsaid82@gmail.com
+// Contact: saidlabiybm@gmail.com
 
 // API_BASE: '/api' when the dashboard is loaded under the normal authenticated
 // path, '/tv' when loaded under /tv/ for the kiosk display (public read-only,

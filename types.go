@@ -2,7 +2,7 @@ package main
 
 // ---------------------------------------------------------------------------
 // Author: Labiyb M. Said — DevSecOps Engineer
-// Contact: abdulmunimsaid82@gmail.com
+// Contact: saidlabiybm@gmail.com
 // ---------------------------------------------------------------------------
 
 import "time"

@@ -3,7 +3,7 @@
 // Relies on globals: COL, thr, fmt.
 //
 // Author: Labiyb M. Said — DevSecOps Engineer
-// Contact: abdulmunimsaid82@gmail.com
+// Contact: saidlabiybm@gmail.com
 
 // ---- Panel: titled dark container -----------------------------------------
 function Panel({ title, right, children, style, bodyStyle, pad = 16 }) {

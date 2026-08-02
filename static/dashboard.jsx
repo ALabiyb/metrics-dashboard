@@ -7,7 +7,7 @@
 // Globals: React, useLiveSnapshot, fmt, thr, COL, RingGauge, Bar, Donut, Sparkline, StatusDot, HealthBadge, Panel.
 //
 // Author: Labiyb M. Said — DevSecOps Engineer
-// Contact: abdulmunimsaid82@gmail.com
+// Contact: saidlabiybm@gmail.com
 
 // useClock ticks once per second, driving the live clock shown in the header.
 function useClock() {

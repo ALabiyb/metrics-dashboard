@@ -3,6 +3,6 @@
 // Globals: React, ReactDOM, Dashboard.
 //
 // Author: Labiyb M. Said — DevSecOps Engineer
-// Contact: abdulmunimsaid82@gmail.com
+// Contact: saidlabiybm@gmail.com
 
 ReactDOM.createRoot(document.getElementById('root')).render(<Dashboard />);
