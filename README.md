@@ -131,7 +131,7 @@ the cluster:
 
 ```bash
 kubectl run hash --rm -it --restart=Never \
-  --image=harbor.devops.softnethq.co.tz/k8s_dashboard/metrics-dashboard:1.0.0 \
+  --image=harbor.devops.nexbridge.co.tz/k8s_dashboard/metrics-dashboard:1.0.0 \
   --command -- /app/dashboard hash-password 'YourPassword'
 ```
 
@@ -186,7 +186,7 @@ the full story.
 
 When a user clicks "Sign in with Keycloak", our app talks to Keycloak using
 the standard OAuth2 flow. Keycloak verifies our app is who it claims to be
-using this client secret. Get it from Keycloak Admin → realm `SoftNet AD`
+using this client secret. Get it from Keycloak Admin → realm `NexBridge AD`
 → Clients → `metrics-dashboard` → Credentials tab.
 
 ---
@@ -301,7 +301,7 @@ These steps use the same realm as k8s-dashboard (`k8s dashboard`). Do this once 
 
 **1 — Open Keycloak Admin Console**
 ```
-https://keycloak.devops.softnethq.co.tz/admin → Realm: k8s dashboard → Clients → Create client
+https://keycloak.devops.nexbridge.co.tz/admin → Realm: k8s dashboard → Clients → Create client
 ```
 
 **2 — Client settings**
@@ -319,9 +319,9 @@ https://keycloak.devops.softnethq.co.tz/admin → Realm: k8s dashboard → Clien
 
 | Field | Value |
 |---|---|
-| Valid redirect URIs | `https://metrics-dashboard.dev.softnethq.co.tz/login/oidc/callback` |
-| Valid post logout redirect URIs | `https://metrics-dashboard.dev.softnethq.co.tz/` |
-| Web origins | `https://metrics-dashboard.dev.softnethq.co.tz` |
+| Valid redirect URIs | `https://metrics-dashboard.dev.nexbridge.co.tz/login/oidc/callback` |
+| Valid post logout redirect URIs | `https://metrics-dashboard.dev.nexbridge.co.tz/` |
+| Web origins | `https://metrics-dashboard.dev.nexbridge.co.tz` |
 
 Click **Save**.
 
@@ -541,7 +541,7 @@ kubectl create secret generic dashboard-auth -n dashboard \
 `k8s/config.yaml`'s `PROMETHEUS_URL` defaults to the in-cluster
 `kube-prometheus-stack` Service name — adjust it to match your cluster
 (namespace + Helm release name) before applying, or use the external
-NodePort URL e.g. `http://192.168.200.15:30909`.
+NodePort URL e.g. `http://<internal-ip>:30909`.
 
 **2. Deploy.**
 
@@ -618,7 +618,7 @@ settings.
 
 ### Security stance
 
-- The TV server (`192.168.200.78`) is on the internal LAN — not internet-exposed.
+- The TV server (`<internal-ip>`) is on the internal LAN — not internet-exposed.
 - `/tv/*` only returns operational health data — no secrets, no
   pod-environment-variables, no node names beyond what's already public.
 - No POST endpoints exist under `/tv/` (no admin export, no logout, no
@@ -631,7 +631,7 @@ settings.
 ### Setting up the TV iframe
 
 ```html
-<iframe src="http://192.168.200.78:9094/tv/"></iframe>
+<iframe src="http://<internal-ip>:9094/tv/"></iframe>
 ```
 
 The trailing slash matters — the route is mounted as a directory so the SPA
@@ -642,7 +642,7 @@ can resolve its relative `shared.jsx`, `dashboard.jsx`, etc. assets.
 ## TV Wall Display — Embed Token (deprecated)
 
 > **Deprecated:** The `/embed?token=…` endpoint still works for backwards
-> compatibility but is no longer used by the SoftNet TV wall. Prefer the
+> compatibility but is no longer used by the NexBridge TV wall. Prefer the
 > `/tv/` kiosk mode above — simpler, no cookie issues in iframes, no token
 > rotation needed.
 
@@ -698,7 +698,7 @@ Use the **HTTP NodePort** to avoid the self-signed TLS certificate error on the
 Samsung TV browser:
 
 ```html
-<iframe src="http://192.168.200.15:32029/embed?token=<your-token>"></iframe>
+<iframe src="http://<internal-ip>:32029/embed?token=<your-token>"></iframe>
 ```
 
 ### Cookie behaviour by protocol
