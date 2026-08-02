@@ -138,6 +138,7 @@ type session struct {
 	Username string    `json:"u"`
 	Role     string    `json:"r"`
 	Expires  time.Time `json:"e"`
+	IDToken  string    `json:"it,omitempty"` // OIDC id_token — used as id_token_hint on full OIDC logout
 }
 
 func (a *Authenticator) sign(payload []byte) string {
@@ -146,8 +147,8 @@ func (a *Authenticator) sign(payload []byte) string {
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
-func (a *Authenticator) issueCookie(w http.ResponseWriter, username, role string) {
-	s := session{Username: username, Role: role, Expires: time.Now().Add(sessionTTL)}
+func (a *Authenticator) issueCookie(w http.ResponseWriter, username, role, idToken string) {
+	s := session{Username: username, Role: role, IDToken: idToken, Expires: time.Now().Add(sessionTTL)}
 	payload, err := json.Marshal(s)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -353,7 +354,7 @@ func (a *Authenticator) handleLoginSubmit(w http.ResponseWriter, r *http.Request
 		http.Redirect(w, r, loginErrPath, http.StatusFound)
 		return
 	}
-	a.issueCookie(w, username, role)
+	a.issueCookie(w, username, role, "")
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
@@ -369,7 +370,14 @@ func (a *Authenticator) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Authenticator) handleLogout(w http.ResponseWriter, r *http.Request) {
+	sess, _ := a.sessionFromRequest(r)
 	a.clearCookie(w)
+	if a.oidc != nil && sess != nil && sess.IDToken != "" {
+		if logoutURL := a.oidc.logoutURL(sess.IDToken); logoutURL != "" {
+			http.Redirect(w, r, logoutURL, http.StatusFound)
+			return
+		}
+	}
 	http.Redirect(w, r, loginPath, http.StatusFound)
 }
 

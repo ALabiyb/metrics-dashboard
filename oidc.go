@@ -13,7 +13,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
@@ -27,12 +29,13 @@ import (
 // dashboard works exactly as before with only DASHBOARD_USERS-based local
 // logins, and the login page hides the SSO button entirely.
 type OIDCAuthenticator struct {
-	provider   *oidc.Provider
-	verifier   *oidc.IDTokenVerifier
-	oauth2Cfg  oauth2.Config
-	adminRole  string
-	auth       *Authenticator // for issuing session cookies + signing state cookies
-	httpClient *http.Client   // custom client for token exchange (same TLS config as discovery)
+	provider           *oidc.Provider
+	verifier           *oidc.IDTokenVerifier
+	oauth2Cfg          oauth2.Config
+	adminRole          string
+	auth               *Authenticator // for issuing session cookies + signing state cookies
+	httpClient         *http.Client   // custom client for token exchange (same TLS config as discovery)
+	endSessionEndpoint string         // Keycloak end_session_endpoint from discovery doc
 }
 
 // oidcClaims is the subset of ID token claims this app cares about. Keycloak
@@ -90,6 +93,19 @@ func NewOIDCAuthenticator(ctx context.Context, auth *Authenticator) (*OIDCAuthen
 		adminRole = "dashboard-admin"
 	}
 
+	// Extract end_session_endpoint from the OIDC discovery document so logout
+	// can terminate the Keycloak SSO session, not just the local cookie.
+	var disc struct {
+		EndSessionEndpoint string `json:"end_session_endpoint"`
+	}
+	endSessionEndpoint := ""
+	if err := provider.Claims(&disc); err != nil {
+		log.Printf("oidc: cannot read end_session_endpoint — full OIDC logout disabled: %v", err)
+	} else if disc.EndSessionEndpoint != "" {
+		endSessionEndpoint = disc.EndSessionEndpoint
+		log.Printf("oidc: full OIDC logout enabled via %s", endSessionEndpoint)
+	}
+
 	return &OIDCAuthenticator{
 		provider:   provider,
 		verifier:   provider.Verifier(&oidc.Config{ClientID: clientID}),
@@ -101,9 +117,28 @@ func NewOIDCAuthenticator(ctx context.Context, auth *Authenticator) (*OIDCAuthen
 			Endpoint:     provider.Endpoint(),
 			Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
 		},
-		adminRole: adminRole,
-		auth:      auth,
+		adminRole:          adminRole,
+		auth:               auth,
+		endSessionEndpoint: endSessionEndpoint,
 	}, nil
+}
+
+// logoutURL builds the Keycloak end_session URL with id_token_hint so Keycloak
+// can terminate the SSO session without prompting the user to confirm logout.
+// Returns "" if end_session_endpoint was not in the discovery document — the
+// caller should fall back to a plain /login redirect.
+func (o *OIDCAuthenticator) logoutURL(idToken string) string {
+	if o.endSessionEndpoint == "" || idToken == "" {
+		return ""
+	}
+	// Derive post_logout_redirect_uri from the configured callback URL:
+	// strip "/login/oidc/callback" → append "/login".
+	// This URI must be listed in the Keycloak client's "Valid post logout redirect URIs".
+	postLogoutURI := strings.TrimSuffix(o.oauth2Cfg.RedirectURL, "/login/oidc/callback") + loginPath
+	v := url.Values{}
+	v.Set("id_token_hint", idToken)
+	v.Set("post_logout_redirect_uri", postLogoutURI)
+	return o.endSessionEndpoint + "?" + v.Encode()
 }
 
 // handleOIDCLogin starts the Authorization Code flow: it generates a random
@@ -194,7 +229,7 @@ func (o *OIDCAuthenticator) handleOIDCCallback(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	o.auth.issueCookie(w, username, role)
+	o.auth.issueCookie(w, username, role, rawIDToken)
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
