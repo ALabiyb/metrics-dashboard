@@ -6,6 +6,7 @@ package main
 // ---------------------------------------------------------------------------
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -93,6 +94,33 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Read index.html from the embedded FS and substitute {{APP_COMPANY_NAME}}
+	// so the footer and page title reflect the deployment's company name without
+	// requiring a rebuild. Set APP_COMPANY_NAME in the ConfigMap or env.
+	idxRaw, err := staticFiles.ReadFile("static/index.html")
+	if err != nil {
+		log.Fatal("reading embedded static/index.html:", err)
+	}
+	companyName := os.Getenv("APP_COMPANY_NAME")
+	if companyName == "" {
+		companyName = "DevSecOps Platform"
+	}
+	idxHTML := bytes.ReplaceAll(idxRaw, []byte("{{APP_COMPANY_NAME}}"), []byte(companyName))
+
+	// serveIndex intercepts root/index.html requests to serve the substituted
+	// bytes; all other paths fall through to the embedded static file server.
+	serveIndex := func(base http.Handler) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/" || r.URL.Path == "" || r.URL.Path == "/index.html" {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				_, _ = w.Write(idxHTML)
+				return
+			}
+			base.ServeHTTP(w, r)
+		}
+	}
+
+	staticFS := http.FileServer(http.FS(staticRoot))
 	mux := http.NewServeMux()
 
 	// -- public routes --------------------------------------------------
@@ -112,7 +140,7 @@ func main() {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}))
-	mux.Handle("/", auth.requireAuth(http.FileServer(http.FS(staticRoot)).ServeHTTP))
+	mux.Handle("/", auth.requireAuth(serveIndex(staticFS)))
 
 	// -- TV kiosk mode (no auth) -----------------------------------------
 	// Public read-only endpoints for the kiosk display. No login, no cookie,
@@ -134,7 +162,7 @@ func main() {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	})
-	mux.Handle("/tv/", http.StripPrefix("/tv", http.FileServer(http.FS(staticRoot))))
+	mux.Handle("/tv/", http.StripPrefix("/tv", serveIndex(staticFS)))
 	mux.HandleFunc("/tv", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/tv/", http.StatusMovedPermanently)
 	})

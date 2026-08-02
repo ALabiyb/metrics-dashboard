@@ -7,7 +7,7 @@ set -euo pipefail
 TEMP="public-push-$(date +%s)"
 git checkout -b "$TEMP"
 
-# Swap branding in public-facing files only
+# Swap branding across README, Go source, and JSX
 perl -pi -e '
   s/SoftNet Technologies/NexBridge Technologies/g;
   s/SoftNet AD/NexBridge AD/g;
@@ -16,9 +16,9 @@ perl -pi -e '
   s/192\.168\.200\.\d+/<internal-ip>/g;
   s/192\.168\.15\.\d+/<internal-ip>/g;
   s/SoftNet TV wall/NexBridge TV wall/g;
-' README.md
+' README.md auth.go oidc.go main.go static/dashboard.jsx
 
-git add README.md
+git add README.md auth.go oidc.go main.go static/dashboard.jsx
 git commit -m "public: NexBridge Technologies branding for GitHub"
 git push github "$TEMP":main --force
 git checkout main
